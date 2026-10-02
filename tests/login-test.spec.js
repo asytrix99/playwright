@@ -56,7 +56,47 @@ test('valid login', async ({ page }) => {
   await page.getByRole('button', { name: 'LOGIN' }).click();
   await page.waitForURL(/hubOrders\/verification/);
   await expect(page).toHaveURL(/hubOrders\/verification/);
+
+  // Order headers to show
   await expect(page.getByRole('button', { name: /Pending Verification/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Verified/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Compounding/ })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: "Search by Order No. / Patient Name / Drug Name" })).toBeVisible();
+
+  // Search box is usable and starts empty
+  await expect(page.getByRole('textbox', { name: "Search by Order No. / Patient Name / Drug Name" })).toBeEditable();
+  await expect(page.getByRole('textbox', { name: "Search by Order No. / Patient Name / Drug Name" })).toHaveValue('');
+
+  // Table headers: exact set, in order (first column has no header text)
+  await expect(page.getByRole('table')).toBeVisible();
+  await expect(page.getByRole('table').getByRole('cell')).toHaveText([
+    '',
+    'Order ID',
+    'Route of administration',
+    'Preparation Name',
+    'Vial Size',
+    'Infusion Duration',
+    'Patient Details',
+    'Treatment Date',
+    'Priority',
+    'Status',
+    'Action',
+    'Book',
+  ]);
+
+  // Pagination footer: checks the "1–25 of 25" format, not the values
+  await expect(page.getByText(/^\d+\s*[–-]\s*\d+ of \d+$/)).toBeVisible();
+
+  // Sidebar, header, bell and TS bubble have no semantic nodes, so check them visually
+  await expect(page).toHaveScreenshot('orders-page.png', {
+    mask: [
+      page.getByRole('button', { name: /^Verified/ }),
+      page.getByRole('button', { name: /^Compounding/ }),
+      page.getByRole('group'),
+      page.getByText(/^\d+\s*[–-]\s*\d+ of \d+$/),
+    ],
+    maxDiffPixels: 100,
+  });
 
   // Scale coordinates to current viewport size. Original coords (1231, 52) were on 1280x720.
   const avatarPos = await page.evaluate(() => {
