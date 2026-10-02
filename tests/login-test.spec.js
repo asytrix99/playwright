@@ -12,9 +12,6 @@ async function enableFlutterAccessibility(page) {
   // Flutter injects this placeholder after the CanvasKit/wasm engine boots, waits to attach
   const placeholder = page.locator('flt-semantics-placeholder');
   await placeholder.waitFor({ state: 'attached', timeout: 60000 });
-  // The placeholder is intentionally positioned off-screen; dispatchEvent fires
-  // the click without Playwright's actionability (visibility) checks. Activating
-  // it makes Flutter build the ARIA/semantics DOM over the canvas.
   await placeholder.dispatchEvent('click');
 }
 
@@ -25,6 +22,7 @@ async function enableFlutterAccessibility(page) {
  * @param {import('@playwright/test').Page} page
  * @param {string} label
  * @param {string} value
+ * @param {number} delay
  */
 async function fillFlutterField(page, label, value, delay) {
   const field = page.getByLabel(label);
@@ -45,16 +43,6 @@ async function fillFlutterField(page, label, value, delay) {
     .toBe(value);
 }
 
-// test('has title', async ({ page }) => {
-//   await page.goto(LOGIN_URL);
-
-//   // Flutter (canvaskit) sets document.title from Dart only after the wasm
-//   // bundle finishes loading, which can exceed the default 5s expect timeout.
-//   // The rendered title is "Rx Hub" (with a space), and it briefly flickers
-//   // back to "" between re-renders before settling.
-//   await expect(page).toHaveTitle(/Rx Hub/, { timeout: 15000 });
-// });
-
 test.beforeEach(async ({ page }) => {
   await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded' });
   await enableFlutterAccessibility(page);
@@ -62,7 +50,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 /** Test successful login with valid credentials and verify logout works. */
-test('logs in with valid credentials', async ({ page }) => {
+test('valid login', async ({ page }) => {
   await fillFlutterField(page, 'Username', 'ea', 50);
   await fillFlutterField(page, 'Password', 'Password12345678', 50);
   await page.getByRole('button', { name: 'LOGIN' }).click();
@@ -93,7 +81,7 @@ test('logs in with valid credentials', async ({ page }) => {
 });
 
 /** Test that the show-password toggle reveals and re-masks the typed password. */
-test('show password toggle reveals entered password', async ({ page }) => {
+test('reveal password toggle', async ({ page }) => {
   const eye = page.getByRole('button').filter({ hasNotText: /\S/ });
   const testPassword = 'TestPass123';
   await fillFlutterField(page, 'Password', testPassword, 50);
@@ -105,14 +93,14 @@ test('show password toggle reveals entered password', async ({ page }) => {
 });
 
 /** Test that submitting blank login form shows validation error messages. */
-test('blank login shows validation errors', async ({ page }) => {
+test('blank login', async ({ page }) => {
   await page.getByRole('button', { name: 'LOGIN' }).click();
   await expect(page).toHaveURL(/login/, { timeout: 5000 });
   await expect(page).toHaveScreenshot('blank-login-validation-errors.png', { maxDiffPixels: 500 });
 });
 
 /** Test that account locks after multiple failed login attempts. */
-test('account locks after repeated failed attempts', async ({ page }) => {
+test('account lock', async ({ page }) => {
   test.setTimeout(90000);
   const uniqueUsername = `testuser_${Date.now()}`;
 

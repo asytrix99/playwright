@@ -4,50 +4,12 @@
 /**
  * Pinpoint the screen coordinates of an element that can't be selected.
  *
- * WHY THIS EXISTS
- * ---------------
- * The app renders to a <canvas>, and not every tappable widget gets its own
- * accessibility/semantics node. When Flutter merges a widget (e.g. the top-right
- * avatar bubble) into a parent container node, Playwright's "Pick locator" can
- * only offer the giant container (something like `#flt-semantic-node-2`), and
- * getByRole / getByText / getByLabel all fail to find it. In that case the only
- * reliable option is to click by (x, y) position — and this helper finds the
- * exact coordinates for you instead of guessing from a screenshot.
- *
- * HOW TO USE
- * ----------
- * 1. Drop a call to this helper into your test at the point where you're stuck,
- *    e.g. right before the element you can't select:
- *
- *        import { logClickCoordinates } from './helpers';
- *        // ...
- *        await logClickCoordinates(page);
- *
- * 2. Run headed so the browser + Inspector open and the test pauses:
- *
- *        npx playwright test --headed
- *
- * 3. In the live browser window, click the target element ONCE. The terminal
- *    prints its coordinates, e.g.:
- *
- *        >>> CLICK_AT x=1236 y=43
- *
- * 4. Press Resume (▶) in the Inspector, then replace the helper call with a
- *    hardcoded click using those numbers:
- *
- *        await page.mouse.click(1236, 43);
- *
  * NOTE: coordinates are tied to the viewport size (this project runs at the
  * Desktop Chrome 1280x720 viewport). If you change the viewport, re-measure.
  *
  * @param {import('@playwright/test').Page} page
  */
 export async function logClickCoordinates(page) {
-  // Show a live coordinate readout box IN THE BROWSER (top-left). No terminal /
-  // console forwarding needed: just HOVER the target element and read x / y off
-  // the box. Hovering (instead of clicking) also avoids triggering menus or
-  // navigation while you measure. The numbers are clientX/clientY — exactly the
-  // coordinate space page.mouse.click(x, y) uses.
   await page.evaluate(() => {
     const box = document.createElement('div');
     box.style.cssText =
@@ -107,15 +69,6 @@ export async function markClickPoint(page, x, y, label = '') {
 /**
  * Taps a Flutter (CanvasKit) app at viewport coordinates (x, y) by dispatching a
  * pointer sequence straight to the glass pane.
- *
- * WHY: when accessibility semantics is enabled, Flutter overlays DOM nodes (e.g.
- * a big scrollable `#flt-semantic-node-*` container) ON TOP of the canvas. A real
- * page.mouse.click lands on that overlay, which absorbs the event instead of
- * forwarding it to a widget that has no semantics node of its own (like the
- * avatar bubble) — so the click appears to "do nothing". Dispatching the pointer
- * events directly to `flt-glass-pane` bypasses DOM hit-testing and lets Flutter's
- * own hit-test find the widget. isTrusted=false doesn't matter — Flutter's
- * pointer binding processes synthetic events too.
  *
  * @param {import('@playwright/test').Page} page
  * @param {number} x viewport clientX
