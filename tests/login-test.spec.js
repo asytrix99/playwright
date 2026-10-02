@@ -3,6 +3,7 @@ import { test, expect } from '@playwright/test';
 import { tapFlutter } from './helpers';
 
 const LOGIN_URL = 'https://rxhub.epic-med.link/#/login';
+const DASHBOARD_URL = 'https://rxhub.epic-med.link';
 
 /**
  * Enable Flutter accessibility tree by activating the semantics placeholder.
@@ -171,4 +172,11 @@ test('account lock', async ({ page }) => {
     mask: [page.getByLabel('Username'), page.getByLabel('Password')],
     maxDiffPixels: 500
   });
+});
+
+/** Test that the landing page loads with login form. */
+test('landing page', async ({ page }) => {
+  await expect(page.getByLabel('Password')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'LOGIN' })).toBeVisible();
+  await expect(page).toHaveScreenshot('landing-page.png', { maxDiffPixels: 500 });
 });
