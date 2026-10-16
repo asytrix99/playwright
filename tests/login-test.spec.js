@@ -1,9 +1,8 @@
 // @ts-check
 import { test, expect } from '@playwright/test';
-import { tapFlutter } from './helpers';
+import { maskRegionFrom, tapFlutterUntil } from './helpers';
 
 const LOGIN_URL = 'https://rxhub.epic-med.link/#/login';
-const DASHBOARD_URL = 'https://rxhub.epic-med.link';
 
 /**
  * Enable Flutter accessibility tree by activating the semantics placeholder.
@@ -54,23 +53,35 @@ test.beforeEach(async ({ page }) => {
 test('valid login', async ({ page }) => {
   await fillFlutterField(page, 'Username', 'ea', 50);
   await fillFlutterField(page, 'Password', 'Password12345678', 50);
+  // Tabs render before their counts, which come from the order list's status_count
+  const orderList = page.waitForResponse((res) => res.url().includes('/order/getOrderList/') && res.ok());
   await page.getByRole('button', { name: 'LOGIN' }).click();
   await page.waitForURL(/hubOrders\/verification/);
   await expect(page).toHaveURL(/hubOrders\/verification/);
+  const { status_count: sc } = await (await orderList).json();
 
-  // Order headers to show
-  await expect(page.getByRole('button', { name: /Pending Verification/ })).toBeVisible();
-  await expect(page.getByRole('button', { name: /^Verified/ })).toBeVisible();
-  await expect(page.getByRole('button', { name: /^Compounding/ })).toBeVisible();
+  // Order tabs: label gets " (n)" only when n > 0, using the same sums as tab_by_state.dart
+  /** @param {string} name @param {number} count */
+  const tabLabel = (name, count) => (count > 0 ? `${name} (${count})` : name);
+  const tabs = {
+    pending: page.getByRole('button', { name: /^Pending Verification( \(\d+\))?$/ }),
+    verified: page.getByRole('button', { name: /^Verified( \(\d+\))?$/ }),
+    compounding: page.getByRole('button', { name: /^Compounding( \(\d+\))?$/ }),
+  };
+  await expect(tabs.pending).toHaveText(tabLabel('Pending Verification', (sc.Pending ?? 0) + (sc.Rejected ?? 0)));
+  await expect(tabs.verified).toHaveText(tabLabel('Verified', sc.Approved ?? 0));
+  await expect(tabs.compounding).toHaveText(tabLabel('Compounding', (sc.Queue ?? 0) + (sc.Compounding ?? 0)));
   await expect(page.getByRole('textbox', { name: "Search by Order No. / Patient Name / Drug Name" })).toBeVisible();
 
   // Search box is usable and starts empty
   await expect(page.getByRole('textbox', { name: "Search by Order No. / Patient Name / Drug Name" })).toBeEditable();
   await expect(page.getByRole('textbox', { name: "Search by Order No. / Patient Name / Drug Name" })).toHaveValue('');
 
-  // Table headers: exact set, in order (first column has no header text)
-  await expect(page.getByRole('table')).toBeVisible();
-  await expect(page.getByRole('table').getByRole('cell')).toHaveText([
+  // Table headers: exact set, in order (first column has no header text).
+  // The header is its own table; when there are orders, the rows are a second table inside the group.
+  const headerTable = page.getByRole('table').filter({ has: page.getByRole('cell', { name: 'Order ID', exact: true }) });
+  await expect(headerTable).toBeVisible();
+  await expect(headerTable.getByRole('cell')).toHaveText([
     '',
     'Order ID',
     'Route of administration',
@@ -88,30 +99,26 @@ test('valid login', async ({ page }) => {
   // Pagination footer: checks the "1–25 of 25" format, not the values
   await expect(page.getByText(/^\d+\s*[–-]\s*\d+ of \d+$/)).toBeVisible();
 
+  // Tab counts change width and shift everything after them, so mask the whole tab row as one strip
+  // (from the first tab to the right edge). The tab labels and counts are already asserted above.
+  const tabRow = await maskRegionFrom(page, tabs.pending);
+
   // Sidebar, header, bell and TS bubble have no semantic nodes, so check them visually
   await expect(page).toHaveScreenshot('orders-page.png', {
     mask: [
-      page.getByRole('button', { name: /^Verified/ }),
-      page.getByRole('button', { name: /^Compounding/ }),
+      tabRow,
       page.getByRole('group'),
       page.getByText(/^\d+\s*[–-]\s*\d+ of \d+$/),
     ],
     maxDiffPixels: 100,
   });
 
-  // Scale coordinates to current viewport size. Original coords (1231, 52) were on 1280x720.
-  const avatarPos = await page.evaluate(() => {
-    const originalViewport = { width: 1280, height: 720 };
-    const currentViewport = { width: window.innerWidth, height: window.innerHeight };
-    const originalCoords = { x: 1231, y: 52 };
-
-    const scaledX = Math.round((originalCoords.x / originalViewport.width) * currentViewport.width);
-    const scaledY = Math.round((originalCoords.y / originalViewport.height) * currentViewport.height);
-
-    return { x: scaledX, y: scaledY };
-  });
-  await tapFlutter(page, avatarPos.x, avatarPos.y);
-  await page.getByRole('menuitem', { name: 'Log Out' }).click();
+  // Avatar menu has no semantic node (tooltip: "" in menu_screen.dart), so tap it by position.
+  // It is anchored to the top-right: 28px right gap + half the ~48px button, 32px top padding + half the button.
+  const { width } = /** @type {{ width: number, height: number }} */ (page.viewportSize());
+  const logOut = page.getByRole('menuitem', { name: 'Log Out' });
+  await tapFlutterUntil(page, width - 28 - 24, 32 + 24, logOut);
+  await logOut.click();
 
   const confirm = page.getByRole('button', { name: /CONFIRM/i });
   await confirm.waitFor({ state: 'visible', timeout: 10000 });

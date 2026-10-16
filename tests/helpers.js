@@ -67,35 +67,58 @@ export async function markClickPoint(page, x, y, label = '') {
 }
 
 /**
- * Taps a Flutter (CanvasKit) app at viewport coordinates (x, y) by dispatching a
- * pointer sequence straight to the glass pane.
+ * Adds an invisible box covering the row of `anchor`, from its left edge to the
+ * right edge of the viewport, and returns a locator for it to pass to a
+ * screenshot `mask`. Useful when content in that row changes width (e.g. counts)
+ * and shifts everything after it. The box has pointer-events:none.
+ *
+ * @param {import('@playwright/test').Page} page
+ * @param {import('@playwright/test').Locator} anchor first element of the row
+ * @param {string} [id] DOM id for the box (must be unique per mask)
+ */
+export async function maskRegionFrom(page, anchor, id = 'pw-mask-region') {
+  const box = await anchor.boundingBox();
+  if (!box) throw new Error('maskRegionFrom: anchor is not visible');
+
+  await page.evaluate(
+    ({ box, id }) => {
+      document.getElementById(id)?.remove();
+      const el = document.createElement('div');
+      el.id = id;
+      el.style.cssText =
+        `position:fixed;left:${box.x}px;top:${box.y}px;right:0;height:${box.height}px;` +
+        'pointer-events:none;z-index:2147483647;';
+      document.documentElement.appendChild(el);
+    },
+    { box, id }
+  );
+  return page.locator(`#${id}`);
+}
+
+/**
+ * Taps a Flutter (CanvasKit) app at viewport coordinates (x, y) with real mouse
+ * input. The semantics layer has full-page "tappable" nodes that swallow clicks,
+ * so its pointer events are switched off for the tap and restored afterwards
+ * (getByRole(...).click() needs them).
  *
  * @param {import('@playwright/test').Page} page
  * @param {number} x viewport clientX
  * @param {number} y viewport clientY
  */
 export async function tapFlutter(page, x, y) {
-  const target = page.locator('flt-glass-pane, flutter-view').first();
-  await target.waitFor({ state: 'attached', timeout: 10000 });
-
-  /** @type {Record<string, unknown>} */
-  const base = {
-    bubbles: true,
-    cancelable: true,
-    composed: true,
-    clientX: x,
-    clientY: y,
-    screenX: x,
-    screenY: y,
-    pointerId: 1,
-    pointerType: 'mouse',
-    isPrimary: true,
-    width: 1,
-    height: 1,
-  };
-
-  await target.dispatchEvent('pointerdown', { ...base, button: 0, buttons: 1, pressure: 0.5 });
-  await target.dispatchEvent('pointerup', { ...base, button: 0, buttons: 0, pressure: 0 });
+  await page.evaluate(() => {
+    const style = document.createElement('style');
+    style.id = 'pw-semantics-click-through';
+    style.textContent = 'flt-semantics-host, flt-semantics { pointer-events: none !important; }';
+    document.head.appendChild(style);
+  });
+  try {
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.up();
+  } finally {
+    await page.evaluate(() => document.getElementById('pw-semantics-click-through')?.remove());
+  }
 }
 
 /**
@@ -107,9 +130,9 @@ export async function tapFlutter(page, x, y) {
  * @param {number} y viewport clientY
  * @param {import('@playwright/test').Locator} targetLocator element to wait for after taps
  * @param {number} timeoutMs total time to keep tapping (default 10000)
- * @param {number} intervalMs delay between taps (default 500)
+ * @param {number} intervalMs delay between taps (default 1000, so a retap doesn't close a menu that is still opening)
  */
-export async function tapFlutterUntil(page, x, y, targetLocator, timeoutMs = 10000, intervalMs = 500) {
+export async function tapFlutterUntil(page, x, y, targetLocator, timeoutMs = 10000, intervalMs = 1000) {
   const startTime = Date.now();
 
   while (Date.now() - startTime < timeoutMs) {
